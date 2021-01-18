@@ -1,0 +1,325 @@
+---
+title: "Simulations of Pollen Pool Differentiation"
+---
+
+This code will simulate pollen pool differentiation among sites (between) and among mothers nested within sites (within). This code uses two levels of genetic diversity (high and low) and three levels of pollen pool differentiation (absence, low, and high). The results for these simulations are presented in Supplementary Table 6.
+
+Note: On line 271, change number of replicates from R = 3 (demo) to R = 500 (this takes a long time to complete, e.g overnight). Supplementary Table 6 was created with R = 500.
+
+# 0. Load Packages
+
+```{r include=FALSE}
+require(gstudio)
+require(dplyr)
+require(ggplot2)
+library(reshape2)
+library(pegas)
+```
+
+# 1. Function to Generate Scenario Given Parameters
+
+This function will allow the user to set two levels of genetic diveristy (low and high) and three levels of pollen pool differentiation among sites and among mothers within sites (absence, low, and high).
+
+```{r}
+phisim <- function(low.diversity=FALSE, nShuffle=1, Prob=1, 
+                   nSeed=5, nPatch=14, nMom=5)
+{
+  
+  # low.diversity: TRUE for 6 alleles (low genetic diversity), FALSE for 10 alleles (high genetic diversity)
+  # nShuffle: 1 for absence of differentiation within sites, 3 for low, 5 for high,
+  # nAlleles for absence of differentiation between sites but within sites
+  # Prob: 1 for absence of differentiation between sites, or provide vector:
+  # - Low differentiation between sites: Prob = c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4))
+  # - High differentiation between sites: Prob = c(0.4, 0.3, 0.2, 0.1, rep(0,6)) 
+  
+  Family <- data.frame(matrix(NA,nSeed+1,3))
+  names(Family) <- c("ID", "OffID", "Pop")
+  Family$ID <- "F1"
+  Family$OffID <- 0:nSeed
+  Family$Pop <- "P1"
+
+  Sims <- list()
+    for(p in 1:nPatch)
+    {
+      Patch <- list()
+      for(f in 1:nMom)
+      {
+        Family$ID <- paste0("F",p,f)
+        Family$OffID <- 0:nSeed
+        Family$Pop <- paste0("P",p)
+        Patch[[f]] <- Family
+      }
+    Sims[[p]] <- Reduce(rbind, Patch)
+    }
+  
+  Sims2 <-  Reduce(rbind, Sims)
+
+  nAlleles <- ifelse(low.diversity==TRUE, 6, 10)
+  Alleles <- c(1:nAlleles)
+  nShuffle <- min(nAlleles, nShuffle)
+  
+  if(length(Prob) == 1) Prob = rep(1/nAlleles, nAlleles) 
+  Prob2 <- Prob[1:nAlleles]
+  Genotypes <- matrix(1,nPatch * nMom * (1+nSeed),2)
+  
+  for(m in 1:10)
+  {
+    Marker <- c()
+    for(p in 1:nPatch)
+    {
+      PatchAlleles <- sample(Alleles)
+      for(f in 1:nMom)
+      {
+        FamAlleles <- PatchAlleles
+        if(nShuffle > 1) FamAlleles[1:nShuffle] <- sample(FamAlleles[1:nShuffle])
+        GenFam <- sample(FamAlleles,nSeed, replace=TRUE, prob=Prob2)
+        Marker <- append(Marker, c(1,GenFam))
+      }
+    }
+    Genotypes[,2] <- Marker
+    Sims2[,3+m] <- paste(Genotypes[,1],Genotypes[,2],sep=":")
+  }
+  names(Sims2)[4:13] <- LETTERS[1:10]
+  Sims2
+}
+```
+
+# 2. Run Simulation Scenarios
+
+This code will use two levels of genetic diversity (high and low) and three levels of pollen pool differentiation among sites and among mothers within sites (absence, low, and high) to create different simulation scenarios.
+
+After the parameters for each simulation have been set, the simulated data for each simulation scenario will be exported as a .csv file. This file will contain the ID of each family (ID), an identifier (OffID) that specifies if each sample is a mother (OffID = 0) or a seed (OffID not equal to 0), the ID of each site (Pop), and the simulated genetic data for 10 microsatellite markers (A-J).
+
+Each .csv file will then be re-imported with the gstudio::read_population function. Then, the gstudio::minus_mom function will be used to subtract the maternal contribution from all seeds for each simulation scenario.
+
+```{r}
+runSims <- function()
+{
+  # With High Genetic Diversity
+  
+  ## No differentiation among mothers within sites, high differentiation among sites
+  Sim01 <- phisim(low.diversity=FALSE, nShuffle=1, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  ## Low differentiation among mothers within sites, high differentiation among sites
+  Sim02 <- phisim(low.diversity=FALSE, nShuffle=3, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  ## High differentiation among mothers within sites, high differentiation among sites
+  Sim03 <- phisim(low.diversity=FALSE, nShuffle=5, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  
+  ## No differentiation among mothers within sites, low differentiation among sites
+  Sim04 <- phisim(low.diversity=FALSE, nShuffle=1, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  ## Low differentiation among mothers within sites, low differentiation among sites
+  Sim05 <- phisim(low.diversity=FALSE, nShuffle=3, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  ## High differentiation among mothers within sites, low differentiation among sites
+  Sim06 <- phisim(low.diversity=FALSE, nShuffle=5, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  
+  ## No differentiation among mothers within sites, no differentiation among sites
+  Sim07 <- phisim(low.diversity=FALSE, nShuffle=1, Prob=1)
+  
+  ## Low differentiation among mothers within sites, no differentiation among sites
+  Sim08 <- phisim(low.diversity=FALSE, nShuffle=10, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  ## High differentiation among mothers within sites, no differentiation among sites
+  Sim09 <- phisim(low.diversity=FALSE, nShuffle=10, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  
+  # With Low Genetic Diversity
+  
+  ## No differentiation among mothers within sites, high differentiation among sites
+  Sim10 <- phisim(low.diversity=TRUE, nShuffle=1, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  ## Low differentiation among mothers within sites, high differentiation among sites
+  Sim11 <- phisim(low.diversity=TRUE, nShuffle=3, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  ## High differentiation among mothers within sites, high differentiation among sites
+  Sim12 <- phisim(low.diversity=TRUE, nShuffle=5, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  
+  ## No differentiation among mothers within sites, low differentiation among sites
+  Sim13 <- phisim(low.diversity=TRUE, nShuffle=1, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  ## Low differentiation among mothers within sites, low differentiation among sites
+  Sim14 <- phisim(low.diversity=TRUE, nShuffle=3, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  ## High differentiation among mothers within sites, low differentiation among sites
+  Sim15 <- phisim(low.diversity=TRUE, nShuffle=5, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  
+  ## No differentiation among mothers within sites, no differentiation among sites
+  Sim16 <- phisim(low.diversity=TRUE, nShuffle=1, Prob=1)
+  
+  ## Low differentiation among mothers within sites, no differentiation among sites
+  Sim17 <- phisim(low.diversity=TRUE, nShuffle=10, 
+                  Prob=c(0.3, 0.25, 0.2, 0.15, 0.05, 0.05, rep(0,4)))
+  
+  ## High differentiation among mothers within sites, no differentiation among sites
+  Sim18 <- phisim(low.diversity=TRUE, nShuffle=10, 
+                  Prob=c(0.4, 0.3, 0.2, 0.1, rep(0,6)))
+  
+  # Collect All Simulated Dataframes as a List
+  
+  Sims.list <- list(Sim01, Sim02, Sim03, Sim04, Sim05, Sim06, Sim07, Sim08, Sim09, 
+                    Sim10, Sim11, Sim12, Sim13, Sim14, Sim15, Sim16, Sim17, Sim18)
+  
+  # Give List Appropriate Names
+  
+  names <- names(Sims.list) <- c("Sim01", "Sim02", "Sim03", "Sim04", "Sim05", "Sim06", "Sim07",
+                                 "Sim08", "Sim09", "Sim10", "Sim11", "Sim12", "Sim13", "Sim14",
+                                 "Sim15", "Sim16", "Sim17", "Sim18")
+  
+  # Export Simulations as .csv Files (this is needed to re-import data with gstudio)
+  
+  for(i in seq_along(Sims.list)) {
+   write.csv(Sims.list[[i]], paste0("Sim",i, ".csv"), row.names = FALSE)
+  }
+  
+  # Load .csv Simulated Data as Genetic Data (re-import data with gstudio)
+  
+  for (i in 1:length(names)){
+    Sims.list[[i]] <- gstudio::read_population(paste0("Sim",i,".csv"), 
+                      type = "separated", locus.columns = 4:13, header = TRUE)
+  }
+  
+  # Subtract Maternal Contribution from Offspring Genotypes
+  
+  pollen.list <- lapply(Sims.list,
+                        function(df) gstudio::minus_mom(df, MomCol = "ID", 
+                                                        OffCol = "OffID"))
+  
+  pollen.list
+}
+```
+
+# 3. TwoGener Analysis (AMOVA of Pollen Pools)
+
+This code will perform an AMOVA on the pollen pools of all simulation scenarios. Then all estimates of pollen pool differentiation (Phi-Statistics) will be copied into a dataframe.
+
+```{r}
+get.phiStatistics <- function(pollen.list)
+{
+  pollen.list.dist <- lapply(pollen.list,
+                             function(df) gstudio::genetic_distance(df, mode = "amova")
+                             %>% as.dist())
+  
+  # Define ID of Mother Plants
+  
+  moms <- lapply(pollen.list,
+                 function(df) as.factor(df$ID))
+  
+  # Define ID of Sites
+  
+  populations <- lapply(pollen.list,
+                 function(df) as.factor(df$Pop))
+  nPatch <- nlevels(populations[[1]])
+  
+  # Perform AMOVA
+  
+  amova.outputs <- list()
+  for (i in seq_along(pollen.list)) {
+    Dist <- pollen.list.dist[[i]]
+    Pop <- populations[[i]]
+    Moms <- moms[[i]]
+    amova.outputs[[i]] <- pegas::amova(Dist ~ Pop/Moms, nperm=100, is.squared=FALSE)
+  }
+  
+  names(amova.outputs) <- names(pollen.list)
+  
+  # Collect All Mesaures of Pollen Pool Differentiation (Phi-Statistics) Into a Dataframe
+  
+  data <- data.frame(matrix(NA, 18,9))
+  names(data) <- c("Simulation", "BetweenPatches", "BetweenMothers", "BetweenMothersWithinPatches", "DifferentiationAmongMothersWithinPatch", "DifferentiationAmongPatches", "GeneticDiversity", "p.BetweenPatches", "p.BetweenMothersWithinPatches")
+  
+  data$Simulation <- names(pollen.list)
+  
+  for(i in seq_along(amova.outputs)) {
+    sig2 <- setNames(amova.outputs[[i]]$varcomp$sigma2, 
+                     rownames(amova.outputs[[i]]$varcomp))
+    data[i,2:4] <- as.vector(pegas::getPhi(sig2))[c(1,4,5)]
+    data[i,8:9] <- amova.outputs[[i]]$varcomp$P.value[1:2]
+}
+
+data$GeneticDiversity <- rep(c("high", "low"), each=9)
+data$DifferentiationAmongMothersWithinPatch <-rep(c("no", "low", "high"),6)
+data$DifferentiationAmongPatches <- rep(rep(c("high", "low", "no"), each=3),2)
+
+data
+}
+```
+
+# 4. Run Replicates
+
+```{r include=FALSE}
+Result <- list()
+R=3   # change this to 500 to recreate results from Supplementary Table 6.
+
+for(r in 1:R)
+{
+  cat(r)
+  pollen.list <- runSims()
+  Result[[r]] <- get.phiStatistics(pollen.list)
+}  
+
+# Export Results File:
+
+#Result.5Seeds.pegas <- Result
+#dput(Result.5Seeds.pegas, "Result.5Seeds.pegas.txt")
+
+# Import Results File:
+
+#Result <- dget("Result.5Seeds.pegas.txt")
+```
+
+# 5. Approximate Type I Error Rate, Power, and Mean Estimates of Pollen Pool Differentiation
+
+This code will produce the results from Supplementary Table 6 (if R = 500). The resulting table includes:
+
+1. Within: Level of pollen pool differentiation among mothers within sites.
+2. Between: Level of pollen pool differentiation among sites.
+3. Diversity: Level of genetic diversity.
+4. Rate.Between: Type I error rates and statistical power for tests of pollen pool differentiation among sites. Type I error rates are given under the scenarios where Between = No. Statistical power is given under the scenarios where Betweeen = Low and High.
+5. Rate.Within: Type I error rates and statistical power for tests of pollen pool differentiation among mothers within sites. Type I error rates are given under the scenarios where Within = No. Statistical power is given under the scenarios where Within = Low and High.
+6. Phi.Between: Simulated estimates of pollen pool differentiation among sites for each scenario (Phi-CT).
+7. Phi.Within: Simulated estimates of pollen pool differentiation among mothers within sites for each scenario (Phi-SC).
+8. Phi.Mothers: Overall simulated estimates of pollen pool differentiation for each scenario (Phi-ST).
+
+```{r}
+Rates.BetweenPatches <- apply(Reduce(cbind,lapply(Result, function(ls) ls$p.BetweenPatches)) < 0.05, 1, mean)
+
+Rates.BetweenMothersWithinPatches <- apply(Reduce(cbind,lapply(Result, function(ls) ls$p.BetweenMothersWithinPatches)) < 0.05, 1, mean)
+
+Rates <- data.frame(Result[[1]][,5:7], Rates.BetweenPatches, Rates.BetweenMothersWithinPatches)
+
+names(Rates) <- c("Within", "Between", "Diversity", "Rate.Between", "Rate.Within")
+
+# Mean Estimates of Pollen Pool Differentiation
+
+Phi.BetweenPatches <- apply(Reduce(cbind,lapply(Result, function(ls) 
+  ls$BetweenPatches)) , 1, mean)
+Phi.BetweenMothersWithinPatches <- apply(Reduce(cbind,lapply(Result, function(ls) 
+  ls$BetweenMothersWithinPatches)) , 1, mean)
+Phi.BetweenMothers <- apply(Reduce(cbind,lapply(Result, function(ls) 
+  ls$BetweenMothers)) , 1, mean)
+
+Rates$Phi.Between <- Phi.BetweenPatches
+Rates$Phi.Within <- Phi.BetweenMothersWithinPatches
+Rates$Phi.Mothers <- Phi.BetweenMothers
+cbind(Rates[,1:3], round(Rates[,4:8], 3))
+```

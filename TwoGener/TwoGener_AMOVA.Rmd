@@ -1,0 +1,125 @@
+---
+title: "AMOVA of Pollen Pools - TwoGener Analysis"
+---
+
+This code tests for significant pollen pool differentiation among sites and among mothers nested within sites by performing a hierarchical analysis of molecular variance (AMOVA) based on pollen haplotypes (TwoGener).
+
+The code includes the three AMOVA models presented in the paper (Table 1):
+
+1. Model A: a single randomly chosen outcrossed seed per fruit (n = 343).
+2. Model B: a single randomly chosen seed per fruit (n = 357).
+3. Model C: all seeds (n = 720).
+
+# 0. Load Packages
+
+```{r include=FALSE}
+library(pegas)
+library(gstudio)
+library(dplyr)
+```
+
+# 1. Load Genetic Data
+
+This corresponds to the array of 71 mothers and 720 seeds genotyped at 11 microsatellite loci.
+
+```{r}
+data <- gstudio::read_population("TwoGener_Raw_Data.csv", type = "separated", locus.columns = 6:16, fileEncoding="UTF-8-BOM")
+```
+
+# 2. Obtain Pollen Pools
+
+This function will subtract the contribution of each mother from the genotypes of each of her seeds.
+
+Warning messages correspond to genotyping errors (mother and seed do not share an allele) or to cases where seed genotypes are missing (NA).
+
+```{r include=FALSE}
+pollen <- gstudio::minus_mom(data, MomCol = "ID", OffCol = "OffID")
+```
+
+# 3. AMOVA Model A (Table 1A)
+
+## 3.1. Remove Selfed Seeds from Data
+
+```{r}
+pollen.outcrossed <- pollen %>%
+  dplyr::select(ID, OffID, Pop, Fruit, Selfed, Hac_C7, Hac_D1, Hb_B9, Hb_C115, Hac_C114, Hac_B6, Hac_B4, Hac_A103, Hac_A116, Hc_C7, Hc_C126) %>%
+  dplyr::filter(Selfed %in% c("No"))
+```
+
+## 3.2. Randomly Select a Single Outcrossed Seed per Fruit
+
+```{r}
+# This command will keep the same random strucutre
+set.seed(1)
+tmp.outcrossed <- split(pollen.outcrossed, pollen.outcrossed$Fruit)
+
+# Randomly select one outcrossed seed per fruit
+pollen.outcrossed.one.seed <- t(sapply(tmp.outcrossed, function(df) df[sample(1:nrow(df), 1),]))
+
+pollen.outcrossed.one.seed <- Reduce(rbind, lapply(tmp.outcrossed, function(df) df[sample(1:nrow(df), 1),]))
+```
+
+## 3.3. AMOVA Model A
+
+```{r}
+# Calculate genetic distance matrix
+D.outcrossed <- gstudio::genetic_distance(pollen.outcrossed.one.seed, mode = "amova")
+D.outcrossed <- as.dist(D.outcrossed)
+
+# Define ID of mother plants
+moms.outcrossed <- as.factor(pollen.outcrossed.one.seed$ID)
+
+# Define ID of sites
+sites.outcrossed <- as.factor(pollen.outcrossed.one.seed$Pop)
+
+# Perform AMOVA
+amova.outcrossed <- pegas::amova(D.outcrossed ~ sites.outcrossed/moms.outcrossed, nperm = 1000, is.squared = FALSE)
+```
+
+# 4 AMOVA Model B (Table 1B)
+
+## 4.1. Randomly Select a Single Seed per Fruit. 
+
+```{r}
+# This command will keep the same random strucutre
+set.seed(1) 
+tmp.one.seed <- split(pollen, pollen$Fruit)
+
+# Select one seed randomly from each fruit
+pollen.one.seed <- t(sapply(tmp.one.seed, function(df) df[sample(1:nrow(df), 1),]))
+pollen.one.seed <- Reduce(rbind, lapply(tmp.one.seed, function(df) df[sample(1:nrow(df), 1),]))
+```
+
+## 4.2. AMOVA With One Seed per Fruit
+
+```{r}
+# Calculate genetic distance matrix
+D.one.seed <- gstudio::genetic_distance(pollen.one.seed, mode = "amova")
+D.one.seed <- as.dist(D.one.seed)
+
+# Define ID of mother plants
+moms.one.seed <- as.factor(pollen.one.seed$ID)
+
+# Define ID of sites
+sites.one.seed <- as.factor(pollen.one.seed$Pop)
+
+# Perform AMOVA
+amova.one.seed <- pegas::amova(D.one.seed ~ sites.one.seed/moms.one.seed, nperm = 1000, is.squared = FALSE)
+```
+
+# 5. AMOVA Model C (Table 1C)
+
+```{r}
+# Calculate genetic distance matrix
+D.all.seeds <- gstudio::genetic_distance(pollen, mode = "amova")
+D.all.seeds <- as.dist(D.all.seeds)
+
+# Define the ID of mother plants
+moms <- as.factor(pollen$ID)
+
+# Define ID of sites
+sites <- as.factor(pollen$Pop)
+
+# Perform AMOVA
+amova.all.seeds <- pegas::amova(D.all.seeds ~ sites/moms, nperm = 1000, is.squared = FALSE)
+```
